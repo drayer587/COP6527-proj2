@@ -123,7 +123,8 @@ __device__ double dis_func(float x1,float y1,float z1,float x2,float y2,float z2
 
 /* ---------------------------------------------------- GPU CODE -------------------------------------------------- */
 
-__global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms, BUCKET_TYPE * d_hist, float PDH_res, int M, int buckets){
+__global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms, 
+			BUCKET_TYPE * d_hist, float PDH_res, int M, int buckets){
         int t = threadIdx.x;
         int b = blockIdx.x;
         int B = blockDim.x;
@@ -138,7 +139,7 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms, BUCKET_T
         int i = t+B*b;
         if(i < n_atoms) {
         	//initialize shared memory to zero
-        	for(j = t; j < buckets; j += B) shmout[j] = 0; 
+        	for(j = t; j < buckets; j += B) {shmout[j] = 0;}
         	//the t-th datum of b-th input data block
 		reg.x_pos = d_x[i];
 		reg.y_pos = d_y[i];
@@ -160,7 +161,8 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms, BUCKET_T
 	                        atomicAdd((unsigned int *) &shmout[h_pos],1);
         	        }
 		}
-		//L ← the b-th input data block loaded to cache
+		//L <- the b-th input data block loaded to cache
+		
 		R[t] = reg;
 		__syncthreads();
                 for(j = t+1; j < B; j++) {
@@ -171,23 +173,10 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms, BUCKET_T
 	        	atomicAdd((unsigned int *) &shmout[h_pos],1);
                 }
 		__syncthreads();
-        	for(j = t; j < buckets; j += B) 
-        		atomicAdd((BUCKET_TYPE *) &d_hist[j], shmout[j]);
+        	for(j = t; j < buckets; j += B) {
+        		atomicAdd((BUCKET_TYPE *) &d_hist[j], shmout[j]);}
 	}
 }
-
-/*
-I have shared with you the code to call a kernel function by passing a shared memory size in the SDH2.cu. Note that there is a 3rd runtime parameter for calling the kernel, that is the shared memory size. In addition, within the kernel, you should define the corresponding shared data structure as follows:
-
-extern __shared__ int mydata[];
-
-instead of 
-
-__shared__ int my data[256]; 
-
-as you did before. 
-*/
-
 
 /* ---------------------------------------------------- MAIN -------------------------------------------------- */
 int main(int argc, char **argv)
@@ -284,4 +273,3 @@ int main(int argc, char **argv)
 	
 	return 0;
 }
-
