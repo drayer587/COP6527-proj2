@@ -154,7 +154,7 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms,
         	        int k;
         	        __syncthreads();
         	        for(k = 0; k < B; k++){
-        	        	//d <- DisFunction(r eg, R[ j])
+        	        	//d <- DisFunction(reg, R[ j])
         	        	dist = dis_func(reg.x_pos,reg.y_pos,reg.z_pos,
         	        			R[k].x_pos,R[k].y_pos,R[k].z_pos);
         	        	h_pos = (int) (dist / PDH_res);
@@ -162,13 +162,13 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms,
         	        }
 		}
 		//L <- the b-th input data block loaded to cache
-		
-		R[t] = reg;
+		//?
 		__syncthreads();
                 for(j = t+1; j < B; j++) {
                 	//d <- DisFunction(reg, L[i])
         	        dist = dis_func(reg.x_pos,reg.y_pos,reg.z_pos,
-        	        		R[j].x_pos,R[j].y_pos,R[j].z_pos);
+        	        		d_x[j+b*B],d_y[j+b*B],d_z[j+b*B]);
+        	        		//L[j].x_pos,L[j].y_pos,L[j].z_pos);
         	        h_pos = (int) (dist / PDH_res);
 	        	atomicAdd((unsigned int *) &shmout[h_pos],1);
                 }
@@ -200,7 +200,8 @@ int main(int argc, char **argv)
 	else{printf("No block size given\n"); exit(0);}
 
 	num_buckets = (int)(BOX_SIZE * 1.732 / PDH_res) + 1;
-	int num_blocks = ceil(PDH_acnt/block_size);
+	int num_blocks = ceil((float)PDH_acnt/block_size);
+	printf("numblock %d\n", num_blocks);
 	histogram = (BUCKET_TYPE *)malloc(sizeof(BUCKET_TYPE)*num_buckets);
 
 	atom_list = (atom *)malloc(sizeof(atom)*PDH_acnt);
