@@ -125,21 +125,24 @@ __device__ double dis_func(float x1,float y1,float z1,float x2,float y2,float z2
 
 __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms, 
 			BUCKET_TYPE * d_hist, float PDH_res, int M, int buckets){
+	//this kernel seems to have a hard limit of block_size 512
         int t = threadIdx.x;
         int b = blockIdx.x;
         int B = blockDim.x;
         extern __shared__ atom mydata[];
 	atom *R = (atom *)mydata;
 	unsigned int *shmout = (unsigned int *)&mydata[B];
+	//unsigned long int above didn't resolve inaccuracies for n_atoms=100000
        	register atom reg;
        	
-	float dist;
+	double dist; //float is faster but introduces intolerable errors
         int j, h_pos;
 	//bounds check
         int i = t+B*b;
         if(i < n_atoms) {
         	//initialize shared memory to zero
-        	for(j = t; j < buckets; j += B) {shmout[j] = 0;}
+        	//for(j = t; j < buckets; j += B) {shmout[j] = 0;}
+        	for(j = 0; j < buckets; j += B) {shmout[j] = 0;}
         	//the t-th datum of b-th input data block
 		reg.x_pos = d_x[i];
 		reg.y_pos = d_y[i];
@@ -182,7 +185,7 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms,
 int main(int argc, char **argv)
 {
 	int i;
-	int block_size;
+	int block_size; //32 is potentially fastest block_size
 
 	if(argc < 2){
 		printf("Missing particle number and distance input\n");
@@ -194,16 +197,28 @@ int main(int argc, char **argv)
 	}
 
 	PDH_acnt = atoi(argv[1]);
+	if (PDH_acnt > 50000) printf("Atom count likely too large for shared memory\n");
 	PDH_res	 = atof(argv[2]);
 
 	if (argc > 3) block_size = atoi(argv[3]);
 	else{printf("No block size given\n"); exit(0);}
-
+	if (block_size > 512) printf("Block size likely too large for shared memory\n");
 	num_buckets = (int)(BOX_SIZE * 1.732 / PDH_res) + 1;
 	int num_blocks = ceil((float)PDH_acnt/block_size);
-	printf("numblock %d\n", num_blocks);
+	printf("block_num %d\n", num_blocks);
 	histogram = (BUCKET_TYPE *)malloc(sizeof(BUCKET_TYPE)*num_buckets);
 
+	printf("If atom number mod block_size is non-zero, results will be inaccurate\n");
+	printf("In that case, consider adding (or subtracting) number below to argv[1]\n");
+	printf("atoms mod block_size %d\n", PDH_acnt%block_size);
+	/*int bonus_atoms = 0;
+	while((PDH_acnt + bonus_atoms) % block_size){
+		bonus_atoms++;
+	}
+	printf("bonus_atoms %d\n", bonus_atoms);
+	//padding bonus atoms at 0,0,0 then removing those distances
+	//after kernel would likely fix double counting */
+	
 	atom_list = (atom *)malloc(sizeof(atom)*PDH_acnt);
 	float* h_x = (float*)malloc(PDH_acnt*sizeof(float));
 	float* h_y = (float*)malloc(PDH_acnt*sizeof(float));
@@ -211,6 +226,7 @@ int main(int argc, char **argv)
 
 	srand(1);
 	/* generate data following a uniform distribution */
+	//
 	for(i = 0;  i < PDH_acnt; i++) {
 		h_x[i] = ((float)(rand()) / RAND_MAX) * BOX_SIZE;
 		h_y[i] = ((float)(rand()) / RAND_MAX) * BOX_SIZE;
@@ -227,10 +243,10 @@ int main(int argc, char **argv)
 	// PDH_baseline();
 	PDH_baseline();
 	
-	/* check the total running time */ 
+	// check the total running time
 	TIMING_STOP();
 	
-	/* print out the histogram */
+	// print out the histogram
 	printf("\nCPU results: \n");
 	output_histogram(histogram);
 	TIMING_PRINT();
@@ -252,7 +268,7 @@ int main(int argc, char **argv)
 
 	// dynamic shared mem
 	//size_t sharedMemSize = num_buckets*sizeof(unsigned);
-	size_t sharedMemSize = sizeof(atom)*block_size + num_buckets*sizeof(int);
+	size_t sharedMemSize = sizeof(atom)*block_size + num_buckets*sizeof(unsigned int);
 	
 	TIMING_START();
 	kernel <<< num_blocks, block_size, sharedMemSize >>> (d_x, d_y, d_z, PDH_acnt, d_hist, PDH_res, num_blocks, num_buckets);
