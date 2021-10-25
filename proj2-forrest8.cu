@@ -121,7 +121,7 @@ __device__ double dis_func(float x1,float y1,float z1,float x2,float y2,float z2
 	return sqrt((x1 - x2)*(x1-x2) + (y1 - y2)*(y1 - y2) + (z1 - z2)*(z1 - z2));
 }
 
-/* ---------------------------------------------------- GPU CODE -------------------------------------------------- */
+/* GPU CODE */
 
 __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms, 
 			BUCKET_TYPE * d_hist, float PDH_res, int M, int buckets){
@@ -132,7 +132,6 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms,
         extern __shared__ atom mydata[];
 	atom *R = (atom *)mydata;
 	unsigned int *shmout = (unsigned int *)&mydata[B];
-	//unsigned long int above didn't resolve inaccuracies for n_atoms=100000
        	register atom reg;
        	
 	double dist; //float is faster but introduces intolerable errors
@@ -165,7 +164,7 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms,
         	        }
 		}
 		//L <- the b-th input data block loaded to cache
-		//?
+		//minimal speedup; omitted due to testing
 		__syncthreads();
                 for(j = t+1; j < B; j++) {
                 	//d <- DisFunction(reg, L[i])
@@ -181,12 +180,12 @@ __global__ void kernel(float* d_x, float* d_y, float* d_z, int n_atoms,
 	}
 }
 
-/* ---------------------------------------------------- MAIN -------------------------------------------------- */
+/* MAIN */
 int main(int argc, char **argv)
 {
 	int i;
-	int block_size; //32 is potentially fastest block_size
-
+	int block_size; //16 is potentially fastest block_size
+	
 	if(argc < 2){
 		printf("Missing particle number and distance input\n");
 		exit(0);
@@ -197,12 +196,11 @@ int main(int argc, char **argv)
 	}
 
 	PDH_acnt = atoi(argv[1]);
-	if (PDH_acnt > 50000) printf("Atom count likely too large for shared memory\n");
 	PDH_res	 = atof(argv[2]);
 
 	if (argc > 3) block_size = atoi(argv[3]);
 	else{printf("No block size given\n"); exit(0);}
-	if (block_size > 512) printf("Block size likely too large for shared memory\n");
+	if (block_size > 16) printf("Block size likely too large for shared memory\n");
 	num_buckets = (int)(BOX_SIZE * 1.732 / PDH_res) + 1;
 	int num_blocks = ceil((float)PDH_acnt/block_size);
 	printf("block_num %d\n", num_blocks);
@@ -236,11 +234,11 @@ int main(int argc, char **argv)
 		atom_list[i].z_pos = h_z[i];
 	}
 
-	// /* call CPU single thread version to compute the histogram */
-	// /* start counting time */
+	// call CPU single thread version to compute the histogram
+	// start counting time
+	/*
 	TIMING_START();
 	
-	// PDH_baseline();
 	PDH_baseline();
 	
 	// check the total running time
